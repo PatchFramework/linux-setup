@@ -1,0 +1,103 @@
+---
+- name: Install packages
+  hosts: localhost
+  gather_facts: yes
+  become: no
+  tasks:
+          - name: "Installing packages with default package manager"
+            package:
+                    name: "{{ item }}" 
+                    state: present
+            with_items:
+                    - curl
+                    - wget
+                    - snapd
+                    - virtualbox
+                    - code
+                    - vim
+                    - vlc
+                    - anki
+                    - git
+                    - zsh
+                    - fonts-powerline # Necessary for oh-my-zsh; See: https://github.com/powerline/fonts
+
+          - name: "Installing packages with snap"
+            snap:
+                    name: "{{ item }}"
+                    state: present
+                    classic: yes
+            with_items:
+                    - docker
+                    - kubectl
+                    - minikube
+                    - helm
+                    - discord
+                    - spotify
+                    - opera
+
+          - name: "Downloading vim configuration from github to ~/.vim_runtime"
+            git:
+                    repo: "https://github.com/amix/vimrc.git"
+                    clone: yes
+                    update: yes 
+                    depth: 1
+                    dest: "~/.vim_runtime"
+            become: no # Necessary so that it finds the home folder ~
+
+          - name: "Set the vim runtime (idempotent script)"
+            shell: "~/.vim_runtime/install_awesome_vimrc.sh"
+            become: no
+
+          - name: "Set ZSH as default Shell (idempotent script)"
+            shell: "if [ $(echo $SHELL) != /usr/bin/zsh ]; then chsh -s $(which zsh); fi" # Set zsh as default if it isn't already
+            become: no # Necessary to set zsh for current user not for root user
+
+          - name: "Using Oh-my-zsh script (idempotent script)"
+            # See: https://github.com/ohmyzsh/ohmyzsh
+            # This looks for the backup file that Oh-My-Zsh creates, 
+            # if it exists Oh-My-Zsh is already installed and nothing happens.
+            shell: 'if [ ! -f ~/.zshrc.pre-oh-my-zsh ]; then sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"; fi'
+            become: no
+
+
+          - name: Creating dir ~/Downloads/powerlevel10k-fonts
+            file: state=directory path="~/Downloads/powerlevel10k-fonts"
+            become: no
+
+          - name: Download fonts for powerlevel10k ZSH-Theme in the new folder
+            # See: https://github.com/romkatv/powerlevel10k#manual
+            get_url: url={{ item }} dest="~/Downloads/powerlevel10k-fonts"
+            with_items:
+                - "https://github.com/romkatv/powerlevel10k-media/raw/master/MesloLGS%20NF%20Regular.ttf"
+                - "https://github.com/romkatv/powerlevel10k-media/raw/master/MesloLGS%20NF%20Bold.ttf"
+                - "https://github.com/romkatv/powerlevel10k-media/raw/master/MesloLGS%20NF%20Italic.ttf"
+                - "https://github.com/romkatv/powerlevel10k-media/raw/master/MesloLGS%20NF%20Bold%20Italic.ttf"
+            become: no
+
+          - name: Download powerlevel10k to Oh-My-Zsh plugins folder
+            git:
+                repo: https://github.com/romkatv/powerlevel10k.git
+                dest: ~/.oh-my-zsh/custom/themes/powerlevel10k
+                clone: yes
+                depth: 1
+                update: yes
+            become: no
+
+
+          - name: Set powerlevel10k as the default theme
+            lineinfile:
+                path: "~/.zshrc"
+                create: yes #Create it if it isn't present
+                state: present
+                insertafter: EOF # inseert at End of file if regex doesn't exist
+                regexp: "^ZSH_THEME="
+                line: 'ZSH_THEME="powerlevel10k/powerlevel10k"'
+
+          - name: "INFORMATION"
+            debug:
+                msg: 
+                - "After the script ends ZSH will be set as the standard shell."
+                - "But this will only take effect after you restart your PC."
+                - "ZSH should welcome you with the setup wizard for powerlevel10k."
+                - "If that is not the case just run: p10k configure"
+                - "You may install the fonts in the ~/Downloads/powerlevel10k-fonts folder manually!"
