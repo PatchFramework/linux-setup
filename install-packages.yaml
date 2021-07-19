@@ -2,9 +2,9 @@
 - name: Install packages
   hosts: localhost
   gather_facts: yes
-  become: no
+  become: yes
   tasks:
-          - name: "Installing packages with default package manager"
+          - name: "Install packages with default package manager"
             package:
                     name: "{{ item }}" 
                     state: present
@@ -19,9 +19,12 @@
                     - anki
                     - git
                     - zsh
-                    - fonts-powerline # Necessary for oh-my-zsh; See: https://github.com/powerline/fonts
+                    #- fonts-powerline # Necessary for oh-my-zsh; See: https://github.com/powerline/fonts
+                    
+          - name: "Set up the current user to use docker without sudo"
+            shell: "sudo addgroup --system docker && sudo adduser $USER docker && sudo setfacl -m user:${USER}:rw /var/run/docker.sock"
 
-          - name: "Installing packages with snap"
+          - name: "Install packages with snap"
             snap:
                     name: "{{ item }}"
                     state: present
@@ -29,13 +32,27 @@
             with_items:
                     - docker
                     - kubectl
-                    - minikube
+                    # - minikube deprecated version
                     - helm
                     - discord
                     - spotify
                     - opera
+                    - mailspring
 
-          - name: "Downloading vim configuration from github to ~/.vim_runtime"
+          - name: "Install Zoom (with apt package manager)"
+            shell: "wget https://zoom.us/client/latest/zoom_amd64.deb && sudo apt install ./zoom_amd64.deb"
+
+          - name: "Install Ulauncher (with apt package manager)"
+            shell: "wget https://github.com/Ulauncher/Ulauncher/releases/download/5.10.0/ulauncher_5.10.0_all.deb && sudo apt install ./ulauncher_5.10.0_all.deb"
+
+          - name:
+          - name: "Check if vim config is already set"
+            shell: "if grep -q '\\.vim_runtime' ~/.vimrc; then echo true; else echo false; fi"
+            register: isVimConfigSet # true if it is set already; false if it needs to be set
+            changed_when: false
+            become: no # run as current user to access the home ~ folder
+
+          - name: "Download vim configuration from github to ~/.vim_runtime"
             git:
                     repo: "https://github.com/amix/vimrc.git"
                     clone: yes
@@ -43,21 +60,27 @@
                     depth: 1
                     dest: "~/.vim_runtime"
             become: no # Necessary so that it finds the home folder ~
+            when: not isVimConfigSet.stdout|bool # this means: run if the vim config isn't set already
 
           - name: "Set the vim runtime (idempotent script)"
             shell: "~/.vim_runtime/install_awesome_vimrc.sh"
             become: no
+            when: not isVimConfigSet.stdout|bool # this means: run if the vim config isn't set already
 
-          - name: "Set ZSH as default Shell (idempotent script)"
-            shell: "if [ $(echo $SHELL) != /usr/bin/zsh ]; then chsh -s $(which zsh); fi" # Set zsh as default if it isn't already
-            become: no # Necessary to set zsh for current user not for root user
+            #- name: "Set ZSH as default Shell (idempotent script)"
+            #shell: "if [ $(echo $SHELL) != /usr/bin/zsh ]; then chsh -s $(which zsh); fi" # Set zsh as default if it isn't already
+            #become: no # Necessary to set zsh for current user not for root user
 
-          - name: "Using Oh-my-zsh script (idempotent script)"
+          - name: "Check if Oh-My-Zsh is installed already"
+            shell: "if [ -d ~/.oh-my-zsh ]; then echo true; else echo false; fi"
+            register: isOhMyZshInstalled
+            changed_when: false # This task doesn't change anything
+
+          - name: "Using Oh-my-zsh script"
             # See: https://github.com/ohmyzsh/ohmyzsh
-            # This looks for the backup file that Oh-My-Zsh creates, 
-            # if it exists Oh-My-Zsh is already installed and nothing happens.
-            shell: 'if [ ! -f ~/.zshrc.pre-oh-my-zsh ]; then sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"; fi'
+            shell: 'sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh) --unattended"'
             become: no
+            when: not isOhMyZshInstalled.stdout|bool # Task is only executed if Oh-My-Zsh isn't installed
 
 
           - name: Creating dir ~/Downloads/powerlevel10k-fonts
@@ -92,12 +115,29 @@
                 insertafter: EOF # inseert at End of file if regex doesn't exist
                 regexp: "^ZSH_THEME="
                 line: 'ZSH_THEME="powerlevel10k/powerlevel10k"'
+            become: no
+
+          - name: Set aliases in ZSH
+            lineinfile:
+              path: "~/.oh-my-zsh/custom/aliases.zsh"
+              create: yes
+              state: present
+              insertafter: EOF
+              regexp: "'{{ item.cmd }}'$" # checks if there is a shortcut for that command
+              line: "alias {{ item.alias }}='{{ item.cmd }}'"
+            become: no
+            with_items:
+            - { alias: k, cmd: kubectl }
+            - { alias: d, cmd: sudo docker }
+            - { alias: repo, cmd: cd ~/repos && pwd && ls}
+            - { alias: watchk, cmd: watch kubectl get all }
 
           - name: "INFORMATION"
             debug:
                 msg: 
                 - "After the script ends ZSH will be set as the standard shell."
                 - "But this will only take effect after you restart your PC."
+                - "If it isn't you can run: >> chsh -s /bin/zsh <<  to change it"
                 - "ZSH should welcome you with the setup wizard for powerlevel10k."
-                - "If that is not the case just run: p10k configure"
+                - "If that is not the case just run: >> p10k configure <<"
                 - "You may install the fonts in the ~/Downloads/powerlevel10k-fonts folder manually!"

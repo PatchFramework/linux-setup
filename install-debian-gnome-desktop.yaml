@@ -1,0 +1,89 @@
+---
+- name: Install packages
+  hosts: localhost
+  gather_facts: yes
+  become: no
+  tasks:
+          - name: "Install required packages with default package manager"
+            package:
+                    name: "{{ item }}" 
+                    state: present
+            with_items:
+                    # Orchis Theme dependencies
+                    - gnome-themes-extra
+                    - gtk2-engines-murrine
+                    - sassc
+
+          - name: "Check if Orchis Theme is present"
+          # Change ~/.local/share/icons if you install your themes to some other folder
+            shell: "if [ -d /usr/share/themes/Orchis ] || [ -d ~/.themes/Orchis ]; then echo true; else echo false; fi"
+            register: orchisPresent # true if it is present; false if it isn't
+            changed_when: false
+
+          - name: "Clone Orchis Theme Repo"
+            git:
+                    repo: "https://github.com/vinceliuice/Orchis-theme.git"
+                    clone: yes
+                    update: yes 
+                    dest: "~/Desktop/Orchis-theme"
+            when: not orchisPresent.stdout|bool # if the orchis theme is not present
+          
+          - name: "Run the setup of the Orchis Theme"
+            # -t all means all color variants are installed purple|pink|red|orange|yellow|green|grey
+            shell: "~/Desktop/Orchis-theme/install.sh -t all"
+            when: not orchisPresent.stdout|bool # if the orchis theme is not present
+
+          - name: "Modify dash to panel for Orchis layout (for rollback read comments in code)"
+            # This modification can be reverted by adding the --restore flag is used
+            shell: "~/Desktop/Orchis-theme/src/gnome-shell/extensions/dash-to-panel/install.sh"
+            when: not orchisPresent.stdout|bool # if the orchis theme is not present
+
+          - name: "Check if Tela-Icons are present"
+          # Change ~/.local/share/icons if you install your themes to some other folder
+            shell: "if [ -d /usr/share/gnome-shell/extensions/dash-to-panel@jderose9.github.com ] || [ -d ~/.local/share/gnome-shell/extensions/dash-to-panel@jderose9.github.com ]; then echo true; else echo false; fi"
+            register: telaPresent # true if it is present; false if it isn't
+            changed_when: false
+
+          - name: "Clone Tela-Circle-Icons Repo"
+            git:
+                    repo: "https://github.com/vinceliuice/Tela-circle-icon-theme.git"
+                    clone: yes
+                    update: yes 
+                    dest: "~/Desktop/Tela-circle-icon-theme"
+            when: not telaPresent.stdout|bool # if the Tela icons are not present
+
+          - name: "Installing all available color versions of the Tela-Icons"
+            # -a means install all available color schemes
+            shell: "~/Desktop/Tela-circle-icon-theme/install.sh -a"
+            when: not telaPresent.stdout|bool # if the Tela icons are not present
+          
+          - name: "Create path ~/.scripts"
+            # TODO: Add extensions like dash to dock and dash to panel in this script
+            file:
+                    path: "~/.scripts"
+                    state: directory
+
+          - name: "Copy a patchfile, that reloads gnome extensions to ~/.scripts"
+            copy:
+                    dest: "~/.scripts"
+                    src: "reloadGnomeExtensions.sh"
+
+          - name: "Create a Autostart Entry for that patch file"
+            # If this fails use a different name then sh.desktop or add the content manually
+            copy:
+                    dest: "~/.config/autostart/reloadGnomeExtensions.desktop"
+                    backup: yes # If a file with the same name exists make a backup
+                    content: |
+                            [Desktop Entry]
+                            Type=Application
+                            Exec=sh -c'sleep 5 && ~/.scripts/reloadGnomeExtensions.sh'
+                            Hidden=false
+                            NoDisplay=false
+                            X-GNOME-Autostart-enabled=true
+                            Name[en_GB]=Reload Gnome Extensions
+                            Name=Reload Gnome Extensions
+                            Comment[en_GB]=If this script isn't found make sure to pull it from github
+                            Comment=If this script isn't found make sure to pull it from github
+
+                    
+            
